@@ -1,0 +1,13 @@
+[database]
+path = "mydb.db"
+
+[[tables]]
+name = "Labratory_Equipment"
+columns_dtypes = [
+  ["inventory_number", "INTEGER PRIMARY KEY"],
+  ["serial_number", "INTEGER" ],
+  ["department", "TEXT"],
+  ["supply_date", "TEXT"],
+  ["supply_number", "INTEGER"],
+  ["supply_doc_number", "INTEGER"]
+]
