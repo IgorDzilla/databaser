@@ -1,0 +1,50 @@
+{
+  "database": {
+    "connection": {
+      "filepath": ""
+    },
+    "schema": {
+      "name": "laboratory_equipment",
+      "columns": [
+        {
+          "name": "inventory_id",
+          "type": "INTEGER PRIMARY KEY"
+        },
+        {
+          "name": "device_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "serial_number",
+          "type": "INTEGER UNIQUE"
+        },
+        {
+          "name": "department",
+          "type": "TEXT"
+        },
+        {
+          "name": "supply_date",
+          "type": "TEXT"
+        },
+        {
+          "name": "supply_number",
+          "type": "INTEGER"
+        },
+        {
+          "name": "supply_doc",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    "queries": [
+      {
+        "name": "some_q",
+        "query": "SELECT * FROM laboratory_equipment"
+      },
+      {
+        "name": "some_q2",
+        "query": "smth"
+      }
+    ]
+  }
+}
