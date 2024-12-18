@@ -1,0 +1,13 @@
+[package]
+name = "database_v0_3"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rusqlite = "0.32.1"
+clap = { version = "4.5.23", features = ["derive"] }
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
+toml = "0.8.19"
+csv = "1.3.1"
+lazy_static = "1.5.0"
