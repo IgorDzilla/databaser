@@ -1,5 +1,28 @@
 use crate::database::definitions::{Column, SqlConstraints};
 use rusqlite::types::{Type, Value};
+use std::error;
+use std::fmt;
+
+#[derive(Debug, Clone)]
+struct  SqlBuilderError {
+    msg: String,
+}
+
+impl From<String> for SqlBuilderError {
+    fn from(value: String) -> Self {
+        SqlBuilderError {
+            msg: value
+        }
+    }
+}
+
+impl From<&str> for SqlBuilderError {
+    fn from(value: &str) -> Self {
+        SqlBuilderError{
+            msg: value.to_string()
+        }
+    }
+}
 
 pub struct CreateTable {
     table_name: String,
@@ -31,7 +54,7 @@ pub struct Count {
 }
 
 pub trait ToQuery {
-    fn to_query(self) -> String;
+    fn to_query(self) -> Result<String, SqlBuilderError>;
 }
 impl CreateTable {
     pub fn new(table_name: &str) -> Self {
@@ -54,11 +77,12 @@ impl CreateTable {
 }
 
 impl ToQuery for CreateTable {
-    fn to_query(self) -> String {
-        let cols = match self.columns {
-            Some(columns) => columns,
-            None => panic!("ToQuery: CreateTable: columns can't be None"),
-        };
+    fn to_query(self) -> Result<String, SqlBuilderError>{
+        if self.columns.is_none() {
+            return Err(SqlBuilderError::from("Can not create query with no columns".to_string()));
+        }
+
+        let cols = self.columns.unwrap();
 
         let mut pk_found = false;
 
@@ -71,7 +95,7 @@ impl ToQuery for CreateTable {
                 Type::Real => columns_insert.push_str(" REAL"),
                 Type::Text => columns_insert.push_str(" TEXT"),
                 Type::Blob => columns_insert.push_str(" BLOB"),
-                Type::Null => panic!("ToQuery: CreateTable: column type can't be Null"),
+                Type::Null => return Err(SqlBuilderError::from("ToQuery: CreateTable: column type can't be Null")),
             }
 
             match &col.constraint {
@@ -81,7 +105,7 @@ impl ToQuery for CreateTable {
                             columns_insert.push_str(" PRIMARY KEY");
                             pk_found = true;
                         } else {
-                            panic!("ToQuery: CreateTable: table can't have two primary keys");
+                            return Err(SqlBuilderError::from("ToQuery: CreateTable: table can't have two primary keys"));
                         }
                     }
                     SqlConstraints::Autoincrement => columns_insert.push_str(" AUTOINCREMENT"),
@@ -99,7 +123,7 @@ impl ToQuery for CreateTable {
             }
         }
 
-        format!(
+        Ok(format!(
             "CREATE TABLE {}{} ({});",
             if self.if_not_exists {
                 "IF NOT EXISTS "
@@ -108,7 +132,7 @@ impl ToQuery for CreateTable {
             },
             self.table_name,
             columns_insert
-        )
+        ))
     }
 }
 
@@ -133,7 +157,7 @@ impl Select {
 }
 
 impl ToQuery for Select {
-    fn to_query(self) -> String {
+    fn to_query(self) -> Result<String, SqlBuilderError> {
         let columns_insert = match &self.columns {
             Some(columns) => {
                 let mut s = String::new();
@@ -153,10 +177,10 @@ impl ToQuery for Select {
             None => "".to_string(),
         };
 
-        format!(
+        Ok(format!(
             "SELECT {} FROM {}{};",
             columns_insert, self.table_name, conditions_insert,
-        )
+        ))
     }
 }
 
@@ -181,7 +205,7 @@ impl Insert {
 }
 
 impl ToQuery for Insert {
-    fn to_query(self) -> String {
+    fn to_query(self) -> Result<String, SqlBuilderError>{
         let columns_insert = match &self.columns {
             Some(columns) => {
                 let mut s = String::new();
@@ -194,19 +218,19 @@ impl ToQuery for Insert {
                 }
                 (s, l)
             }
-            None => panic!("ToQuery: Insert: columns can't be None."),
+            None => return Err(SqlBuilderError::from("ToQuery: Insert: columns can't be None.")),
         };
 
         let vals_insert = match &self.vals {
             Some(vals) => {
                 if vals.len() != columns_insert.1 {
-                    panic!("ToQuery: Insert: columns' values' sizes do not match.");
+                    return Err(SqlBuilderError::from("ToQuery: Insert: columns' values' sizes do not match."));
                 }
                 let mut s = String::new();
                 for (idx, val) in vals.iter().enumerate() {
                     match val {
                         Value::Text(t) => s.push_str(&format!("\'{}\'", t)),
-                        Value::Blob(_b) => panic!("ToQuery: Insert: BLOB must be parameterized."),
+                        Value::Blob(_b) => return Err(SqlBuilderError::from("ToQuery: Insert: BLOB must be parameterized.")),
                         Value::Integer(i) => s.push_str(i.to_string().as_str()),
                         Value::Real(r) => s.push_str(r.to_string().as_str()),
                         Value::Null => s.push_str("NULL"),
@@ -229,10 +253,10 @@ impl ToQuery for Insert {
             }
         };
 
-        format!(
+        Ok(format!(
             "INSERT INTO {} ({}) VALUES ({});",
             self.table_name, columns_insert.0, vals_insert
-        )
+        ))
     }
 }
 
@@ -263,12 +287,12 @@ impl Count {
 }
 
 impl ToQuery for Count {
-    fn to_query(self) -> String {
+    fn to_query(self) -> Result<String, SqlBuilderError>{
         let column_insert = match &self.column {
             Some(column) => column.name.clone(),
             None => {
                 if self.distinct {
-                    panic!("ToQuery: Count: DISTINCT can be applied only to columns.");
+                    return Err(SqlBuilderError::from("ToQuery: Count: DISTINCT can be applied only to columns."));
                 }
                 "*".to_string()
             }
@@ -279,13 +303,13 @@ impl ToQuery for Count {
             None => "".to_string(),
         };
 
-        format!(
+        Ok(format!(
             "SELECT COUNT({}{}) FROM {} {};",
             if self.distinct { "DISTINCT " } else { "" },
             column_insert,
             self.table_name,
             condition_insert,
-        )
+        ))
     }
 }
 
@@ -319,7 +343,7 @@ mod tests {
         ];
     }
     #[test]
-    fn test_count() {
+    fn test_count() -> Result<(), SqlBuilderError>{
         let column: Column = Column {
             name: "test_col".to_string(),
             d_type: Type::Text,
@@ -328,16 +352,18 @@ mod tests {
 
         let mut q = Count::new("test_table").column(&column);
         println!("\nCount query test");
-        println!("{}", q.to_query());
+        println!("{}", q.to_query()?);
         q = Count::new("test_table")
             .column(&column)
             .distinct(true)
             .condition("test_val > 20");
-        println!("{}", q.to_query());
+        println!("{}", q.to_query()?);
+
+        Ok(())
     }
 
     #[test]
-    fn test_insert() {
+    fn test_insert() -> Result<(), SqlBuilderError> {
         let table = Table {
             name: "test_table".to_string(),
             columns: cols.clone(),
@@ -353,31 +379,37 @@ mod tests {
                 Value::Text("four".to_string()),
             ])
             .to_query();
-        println!("{}", q);
+        println!("{}", q?);
         q = Insert::new(&table.name).columns(&table.columns).to_query();
-        println!("{}", q);
+        println!("{}", q?);
+
+        Ok(())
     }
 
     #[test]
-    fn test_create_table() {
+    fn test_create_table() -> Result<(), SqlBuilderError>{
         println!("\nCreate table test");
         let q = CreateTable::new("test_table")
             .if_not_exists(true)
             .columns(&cols)
             .to_query();
-        println!("{}", q);
+        println!("{}", q?);
+
+        Ok(())
     }
 
     #[test]
-    fn test_select() {
+    fn test_select() -> Result<(), SqlBuilderError> {
         println!("\nSelect test");
         let mut q = Select::new("test_table")
             .columns(&cols)
             .condition("column1 > column2");
-        println!("{}", q.to_query());
+        println!("{}", q.to_query()?);
         q = Select::new("test_table");
-        println!("{}", q.to_query());
+        println!("{}", q.to_query()?);
         q = Select::new("test_table").columns(&cols);
-        println!("{}", q.to_query());
+        println!("{}", q.to_query()?);
+
+        Ok(())
     }
 }
